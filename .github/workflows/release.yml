@@ -1,0 +1,71 @@
+name: Build and release
+
+on:
+  push:
+    branches: [master]
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: awaken-releases
+  queue: max
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: macos-15
+    timeout-minutes: 20
+    permissions:
+      contents: write
+    env:
+      AWAKEN_RELEASE_TAG: ${{ github.event_name == 'release' && github.event.release.tag_name || '' }}
+      AWAKEN_SNAPSHOT: ${{ github.event_name == 'push' && '1' || '' }}
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: ${{ github.event.release.tag_name || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Validate release version
+        if: github.event_name == 'release'
+        env:
+          PRERELEASE: ${{ github.event.release.prerelease }}
+        run: swift run ReleaseTool validate "$AWAKEN_RELEASE_TAG" "$PRERELEASE"
+
+      - name: Test
+        run: make test
+
+      - name: Build universal binary
+        run: swift build -c release --product awaken --arch arm64 --arch x86_64
+
+      - name: Prepare assets
+        run: |
+          mkdir -p dist
+          install -m 755 "$(swift build -c release --product awaken --arch arm64 --arch x86_64 --show-bin-path)/awaken" dist/awaken-macos-universal
+          codesign --force --sign - dist/awaken-macos-universal
+          codesign --verify --strict dist/awaken-macos-universal
+          lipo dist/awaken-macos-universal -verify_arch arm64
+          lipo dist/awaken-macos-universal -verify_arch x86_64
+          dist/awaken-macos-universal --version
+          cp dist/awaken-macos-universal dist/awaken-macos-universal-SNAPSHOT
+          cd dist
+          shasum -a 256 awaken-macos-universal > awaken-macos-universal.sha256
+          shasum -a 256 awaken-macos-universal-SNAPSHOT > awaken-macos-universal-SNAPSHOT.sha256
+
+      - name: Update development draft
+        if: github.event_name == 'push'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: swift run ReleaseTool draft "$PWD/dist"
+
+      - name: Upload release assets
+        if: github.event_name == 'release'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: swift run ReleaseTool publish "$PWD/dist"
