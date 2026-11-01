@@ -121,3 +121,14 @@ The [workflow](.github/workflows/release.yml) uses GitHub's built-in token with 
 Click **Publish release**. [The published event](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#release) tests and rebuilds the exact tag, verifies its version, signs both architectures, and uploads the binary and checksum. Snapshot assets are removed after a successful upload. Draft saves do not trigger release builds. Reruns replace the workflow's assets and preserve release notes.
 
 To finalise a candidate, create a new final tag and release. Changing the prerelease checkbox does not rename an `-rc.N` version. Assets appear after the build succeeds; monitor the Actions run for failures.
+
+## Licence
+
+Licensed under the [Mozilla Public License 2.0](LICENSE) (`MPL-2.0`).
+
+```sh
+make license        # Add missing SPDX headers
+make license-check  # Check for missing headers without editing
+```
+
+Both targets use the project's SwiftPM `LicenseTool`; no additional toolchain is required. They cover Swift sources, tests, build tools, plugins, workflows, `Package.swift` and `Makefile`. The tool preserves SwiftPM's first-line tools directive and existing notices. A conflicting SPDX licence stops the operation for manual review.

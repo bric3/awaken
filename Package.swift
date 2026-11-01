@@ -1,4 +1,6 @@
 // swift-tools-version: 5.9
+// SPDX-License-Identifier: MPL-2.0
+
 import PackageDescription
 
 let package = Package(
@@ -12,7 +14,9 @@ let package = Package(
       name: "VersionGenerator", dependencies: ["Versioning"], path: "Tools/VersionGenerator"),
     .plugin(name: "BuildVersion", capability: .buildTool(), dependencies: ["VersionGenerator"]),
     .executableTarget(name: "ReleaseTool", dependencies: ["Versioning"], path: "Tools/ReleaseTool"),
+    .executableTarget(name: "LicenseTool", path: "Tools/LicenseTool"),
     .testTarget(name: "AwakenTests", dependencies: ["Awaken"]),
     .testTarget(name: "ReleaseTests", dependencies: ["Versioning", "ReleaseTool"]),
+    .testTarget(name: "LicenseToolTests", dependencies: ["LicenseTool"]),
   ]
 )
