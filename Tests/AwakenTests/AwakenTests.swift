@@ -160,10 +160,10 @@ final class AwakenTests: XCTestCase {
 
   func testWorkerRejectsInvalidAndExtraInput() throws {
     for input in [
-      "123\n", "AWAKEN/1 123 0 0\n", "AWAKEN/2 0 0 0\n", "AWAKEN/2 -1 0 0\n",
-      "AWAKEN/2 18446744073709551615 0 0\n", "AWAKEN/2 300 /bin/sh 0\n",
-      "AWAKEN/2 300 0 2\n", "AWAKEN/2 300 0 0 extra\n", "AWAKEN/2  300 0 0\n",
-      String(repeating: "X", count: 65) + "\n", "AWAKEN/2 300\t0 0\n",
+      "123\n", "AWAKEN/1 123 0 0\n", "AWAKEN/2 123 0 0\n", "AWAKEN/3 0 0 0\n", "AWAKEN/3 -1 0 0\n",
+      "AWAKEN/3 18446744073709551615 0 0\n", "AWAKEN/3 300 /bin/sh 0\n",
+      "AWAKEN/3 300 0 2\n", "AWAKEN/3 300 0 0 extra\n", "AWAKEN/3  300 0 0\n",
+      String(repeating: "X", count: 65) + "\n", "AWAKEN/3 300\t0 0\n",
     ] {
       let pipe = Pipe()
       try pipe.fileHandleForWriting.write(contentsOf: Data(input.utf8))
@@ -172,7 +172,7 @@ final class AwakenTests: XCTestCase {
           pipe.fileHandleForReading.fileDescriptor, cancellation: Cancellation()))
     }
     let pipe = Pipe()
-    try pipe.fileHandleForWriting.write(contentsOf: Data("AWAKEN/2 1 0 0\nextra".utf8))
+    try pipe.fileHandleForWriting.write(contentsOf: Data("AWAKEN/3 1 0 0\nextra".utf8))
     _ = try ControlPipe.request(
       pipe.fileHandleForReading.fileDescriptor, cancellation: Cancellation())
     XCTAssertThrowsError(try ControlPipe.disconnected(pipe.fileHandleForReading.fileDescriptor))

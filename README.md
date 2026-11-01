@@ -7,7 +7,7 @@ Timed sleep prevention for macOS 13+. Supports lid-close sessions on battery and
 ```sh
 awaken                        # Prevent idle sleep for 300 seconds
 awaken -t 1800                # Run for 30 minutes
-awaken --ignore-lid           # Prevent lid-close sleep; requires sudo
+awaken --ignore-lid           # Requires root or passwordless sudo
 awaken --prevent-screensaver  # Keep the display awake
 awaken --version             # Print the embedded build version
 ```
@@ -47,7 +47,13 @@ make uninstall
 
 ## Privileges
 
-Ordinary sessions require no sudo. `--ignore-lid` starts a separate root worker and requires a readable internal battery and lid sensor.
+Ordinary sessions, including `--prevent-screensaver`, require no sudo. `--ignore-lid` starts a separate root worker and requires a readable internal battery and lid sensor.
+
+Lid mode fails immediately unless Awaken runs as root or sudo permits the exact worker command without a password. It uses `sudo -n -k`: no prompt and no cached credentials. Run an explicitly elevated session:
+
+```sh
+sudo "$(command -v awaken)" --ignore-lid -t 120
+```
 
 Optional passwordless setup:
 
@@ -58,7 +64,7 @@ eval "$(awaken sudoers)"  # Authenticate and install
 
 Setup installs `/Library/PrivilegedHelperTools/awaken` and `/private/etc/sudoers.d/awaken`. The rule permits only the root-owned worker command. The installer checks ownership, validates the rule with `visudo`, and refuses unrelated files. No background service is installed.
 
-Rerun setup after updating the executable. Stop active sessions before removal:
+Rerun setup after updating the executable to refresh the worker protocol. Stop active sessions before removal:
 
 ```sh
 make install-sudoers      # Source-tree alternative
@@ -83,6 +89,39 @@ Killing or suspending the root worker can leave sleep disabled. OS failure and r
 sudo pmset -a disablesleep 0
 ```
 
+## Manual checks
+
+Run these on the target Mac. Quit other keep-awake tools first.
+
+### Lid-close sleep
+
+Disconnect external displays and docks to avoid macOS closed-display mode. Use a ventilated surface and battery charge above 10%.
+
+1. With Awaken stopped, close the lid for 15 seconds, then reopen it. Confirm a lid-triggered sleep entry in the log below. Record the timestamps for each test.
+2. Run `awaken --ignore-lid -t 120`. Use the explicit sudo command above if passwordless setup is absent. Wait for the active session message, close the lid for 30 seconds, then reopen it before expiry. No system sleep entry should occur during this interval.
+3. Press Ctrl-C. `SleepDisabled` should return to `No`.
+4. Run a new 60-second lid session, close the lid and wait 90 seconds before reopening it. The log should show sleep near expiry; `SleepDisabled` should be `No`.
+5. Repeat on battery and AC power.
+
+Inspect settings in a second terminal while the lid is open:
+
+```sh
+ioreg -r -d 1 -n IOPMrootDomain | rg '"(SleepDisabled|AppleClamshellState)"'
+pmset -g log | rg 'Entering Sleep|Wake from|Clamshell' | tail -n 30
+```
+
+`SleepDisabled` should be `Yes` only during the lid session. This setting confirms activation; the sleep log confirms physical behaviour. A dark or locked display alone does not prove system sleep. If the baseline does not sleep, resolve that before testing Awaken.
+
+### Automatic screensaver
+
+Record the current System Settings values. Set the idle interval to one minute in [Screen Saver settings](https://support.apple.com/guide/mac-help/mchlp1227/mac), and set display-off time longer than three minutes for the current power source in [Lock Screen settings](https://support.apple.com/guide/mac-help/mh11784/mac).
+
+1. Run `awaken -t 180`. Leave keyboard and mouse untouched for 90 seconds. The automatic screensaver should start. Stop the session after this baseline check.
+2. Run `awaken --prevent-screensaver -t 180`. Leave all input untouched for 90 seconds. The screensaver should remain inactive and the display should stay awake.
+3. Let the session expire. Automatic screensaver activation should resume once the idle interval is met. Restore the original settings.
+
+`pmset -g assertions` should show Awaken's `PreventUserIdleSystemSleep`, `PreventUserIdleDisplaySleep` and `UserIsActive` assertions during step 2. Assertions confirm requests to macOS; the idle test confirms the visible result. Preview, hot corners and explicit locking do not test automatic activation.
+
 ## Build and versions
 
 ```sh
@@ -92,12 +131,12 @@ make test
 
 SwiftPM generates an embedded version; the installed tool needs neither Git nor a version file. Local builds use reachable Git tags:
 
-| Source state                     | Embedded version  |
-| -------------------------------- | ----------------- |
-| No release tags or Git metadata  | `0.1.0-SNAPSHOT`  |
-| Clean checkout at `v0.1.0-rc.1`  | `0.1.0-rc.1`      |
-| Clean checkout at `v0.1.0`       | `0.1.0`           |
-| Development after either tag     | `0.1.1-SNAPSHOT`  |
+| Source state                    | Embedded version |
+| ------------------------------- | ---------------- |
+| No release tags or Git metadata | `0.1.0-SNAPSHOT` |
+| Clean checkout at `v0.1.0-rc.1` | `0.1.0-rc.1`     |
+| Clean checkout at `v0.1.0`      | `0.1.0`          |
+| Development after either tag    | `0.1.1-SNAPSHOT` |
 
 Development uses the highest reachable release version, removes its prerelease suffix, increments the patch, and appends `-SNAPSHOT`. Dirty builds use the development version. Master CI forces snapshot mode even when HEAD has a release tag.
 
@@ -113,10 +152,10 @@ The [workflow](.github/workflows/release.yml) uses GitHub's built-in token with 
 
 **Publish:** open the draft or create a release in GitHub. Choose a new tag and its target commit:
 
-| Tag            | Prerelease checkbox | Embedded version |
-| -------------- | ------------------- | ---------------- |
-| `v0.1.0-rc.1`  | Checked             | `0.1.0-rc.1`     |
-| `v0.1.0`       | Unchecked           | `0.1.0`          |
+| Tag           | Prerelease checkbox | Embedded version |
+| ------------- | ------------------- | ---------------- |
+| `v0.1.0-rc.1` | Checked             | `0.1.0-rc.1`     |
+| `v0.1.0`      | Unchecked           | `0.1.0`          |
 
 Click **Publish release**. [The published event](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#release) tests and rebuilds the exact tag, verifies its version, signs both architectures, and uploads the binary and checksum. Snapshot assets are removed after a successful upload. Draft saves do not trigger release builds. Reruns replace the workflow's assets and preserve release notes.
 

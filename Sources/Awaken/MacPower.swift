@@ -221,12 +221,12 @@ struct WorkerRequest: Equatable {
   let preventScreensaver: Bool
 
   var message: String {
-    "AWAKEN/2 \(seconds) \(showCountdown ? 1 : 0) \(preventScreensaver ? 1 : 0)\n"
+    "AWAKEN/3 \(seconds) \(showCountdown ? 1 : 0) \(preventScreensaver ? 1 : 0)\n"
   }
 
   static func parse(_ line: String) throws -> WorkerRequest {
     let fields = line.split(separator: " ", omittingEmptySubsequences: false)
-    guard fields.first == "AWAKEN/2" else {
+    guard fields.first == "AWAKEN/3" else {
       throw Failure("incompatible worker; refresh with eval \"$(awaken sudoers)\"")
     }
     guard fields.count == 4, ["0", "1"].contains(fields[2]), ["0", "1"].contains(fields[3]) else {

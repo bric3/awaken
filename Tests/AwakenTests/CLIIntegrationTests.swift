@@ -248,6 +248,16 @@ final class CLIIntegrationTests: XCTestCase {
     }
   }
 
+  func testWorkerRejectsNonRootBeforeReportingReady() throws {
+    guard geteuid() != 0 else { throw XCTSkip("requires an unprivileged test process") }
+    let (process, output) = try launch(["--privileged-worker"])
+    defer { stopIfRunning(process) }
+    waitForExit(process)
+    let text = String(decoding: output.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
+    XCTAssertEqual(process.terminationStatus, 1)
+    XCTAssertEqual(text, "awaken: worker requires root\n")
+  }
+
   func testSudoersSubcommandPrintsOnlyTheSetupCommand() throws {
     let (process, output) = try launch(["sudoers"])
     defer { stopIfRunning(process) }
