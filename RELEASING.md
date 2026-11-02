@@ -23,7 +23,7 @@ Release builds require a clean checkout at the selected tag. The embedded versio
 
 Each successful current `master` build creates or updates one managed draft. It suggests the next final tag and targets the built commit without creating a Git tag.
 
-The draft carries `awaken-macos-universal-SNAPSHOT` and its `.sha256` file. Its managed body block records the embedded version and commit. User notes, title and tag selection are preserved. Unrelated drafts and existing Git tags remain unchanged. Failed builds leave the previous draft intact.
+The draft carries `awaken-macos-universal-SNAPSHOT` and its `.sha256` file. The build marker or snapshot binary identifies the managed draft. Its managed body block records the embedded version and commit. Replacing the release notes in GitHub preserves automatic updates: the next build appends the missing block. User notes, title and tag selection are preserved. Unrelated drafts and existing Git tags remain unchanged. Failed builds leave the previous draft intact.
 
 ## Publish from GitHub
 

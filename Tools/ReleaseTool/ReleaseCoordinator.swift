@@ -27,6 +27,9 @@ enum DraftNotes {
   static func update(_ body: String?, version: String, sha: String) throws -> String {
     let summary = "\(start)\nDevelopment build: `\(version)` (`\(sha)`).\n\(end)"
     guard let body else { return summary }
+    if !body.contains(start), !body.contains(end) {
+      return body.isEmpty ? summary : body + "\n\n" + summary
+    }
     guard let first = body.range(of: start), let last = body.range(of: end),
       first.upperBound <= last.lowerBound
     else {
@@ -86,7 +89,11 @@ struct ReleaseCoordinator {
       if batch.count < 100 { break }
       page += 1
     }
-    let drafts = releases.filter { $0.draft && ($0.body ?? "").contains(DraftNotes.start) }
+    let drafts = releases.filter {
+      $0.draft
+        && (($0.body ?? "").contains(DraftNotes.start)
+          || $0.assets.contains(where: { $0.name == "awaken-macos-universal-SNAPSHOT" }))
+    }
     guard drafts.count <= 1 else {
       throw ToolError("multiple managed drafts; keep one Awaken development draft")
     }

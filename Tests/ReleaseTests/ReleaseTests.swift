@@ -43,6 +43,53 @@ final class ReleaseTests: XCTestCase {
     XCTAssertEqual(github.releases[0]["tag_name"] as? String, "v0.2.0-rc.1")
   }
 
+  func testDraftNotesRestoreDeletedMarkersWithoutChangingUserNotes() throws {
+    let summary = try DraftNotes.update(nil, version: "0.1.0-SNAPSHOT", sha: "current")
+    for notes in ["", "# First release\r\n\r\nUser notes\r\n"] {
+      let updated = try DraftNotes.update(notes, version: "0.1.0-SNAPSHOT", sha: "current")
+      XCTAssertTrue(updated.hasPrefix(notes))
+      XCTAssertTrue(updated.hasSuffix(summary))
+      XCTAssertEqual(
+        try DraftNotes.update(updated, version: "0.1.0-SNAPSHOT", sha: "current"), updated)
+    }
+  }
+
+  func testDraftWithReplacedNotesIsRecognisedBySnapshotAsset() throws {
+    let github = FakeGitHub()
+    let notes = "# First release\r\n\r\nUser notes\r\n"
+    var draft = github.release(body: notes)
+    draft["name"] = "Awaken v0.1.0"
+    draft["assets"] = [
+      ["id": 10, "name": "awaken-macos-universal-SNAPSHOT"],
+      ["id": 11, "name": "user-file"],
+    ]
+    github.releases = [draft]
+    try github.updateDraft()
+    XCTAssertEqual(github.releases.count, 1)
+    let patch = try XCTUnwrap(github.patches.first)
+    XCTAssertEqual(patch["target_commitish"] as? String, "current")
+    XCTAssertEqual(patch["tag_name"] as? String, "v0.1.0")
+    XCTAssertNil(patch["name"])
+    let updated = try XCTUnwrap(patch["body"] as? String)
+    XCTAssertTrue(updated.hasPrefix(notes))
+    XCTAssertTrue(updated.contains("Development build: `0.1.0-SNAPSHOT` (`current`)."))
+    XCTAssertEqual(github.uploads.map(\.0), [1, 1])
+    XCTAssertEqual(github.deleted, ["repos/test/repo/releases/assets/10"])
+  }
+
+  func testMultipleSnapshotDraftsRefuseToWrite() throws {
+    let github = FakeGitHub()
+    github.releases = ["v0.1.0", "v0.2.0"].map { tag in
+      var draft = github.release(tag: tag, body: "User notes")
+      draft["assets"] = [["id": 10, "name": "awaken-macos-universal-SNAPSHOT"]]
+      return draft
+    }
+    XCTAssertThrowsError(try github.updateDraft())
+    XCTAssertTrue(github.patches.isEmpty)
+    XCTAssertTrue(github.uploads.isEmpty)
+    XCTAssertTrue(github.deleted.isEmpty)
+  }
+
   func testUntaggedDraftSuggestsNextVersionWithoutRetargetingExistingTags() throws {
     for existingTag in [false, true] {
       let github = FakeGitHub()
