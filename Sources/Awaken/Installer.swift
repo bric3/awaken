@@ -6,10 +6,89 @@ import Foundation
 enum Installer {
   static let rulePath = "/private/etc/sudoers.d/awaken"
 
-  static func setupCommand(executable: String, user: String) throws -> String {
-    _ = try rule(user: user)
+  static func setupScript(executable: String, user: String) throws -> String {
+    let contents = try rule(user: user)
     let quote: (String) -> String = { "'" + $0.replacingOccurrences(of: "'", with: "'\\''") + "'" }
-    return "/usr/bin/sudo -- \(quote(executable)) --install-sudoers \(quote(user))"
+    return #"""
+      awaken_sudoers() {
+        /usr/bin/sudo -- /bin/sh -s -- \#(quote(executable)) \#(quote(user)) <<'AWAKEN_SUDOERS'
+      set -eu
+      umask 077
+      root_uid=0
+
+      fail() { printf 'awaken: %s\n' "$*" >&2; exit 1; }
+      trusted() {
+        [ ! -L "$1" ] || fail "$1 must not be a symlink"
+        if [ "$2" = directory ]; then
+          [ -d "$1" ] || fail "$1 must be a directory"
+        else
+          [ -f "$1" ] || fail "$1 must be a regular file"
+        fi
+        owner=$(/usr/bin/stat -f '%u' "$1")
+        mode=$(/usr/bin/stat -f '%Lp' "$1")
+        [ "$owner" -eq "$root_uid" ] && [ "$((0$mode & 022))" -eq 0 ] ||
+          fail "$1 must be root-owned, with no group/other write access"
+        if [ "$1" != / ]; then trusted "$(/usr/bin/dirname "$1")" directory; fi
+      }
+
+      [ "$(/usr/bin/id -u)" -eq "$root_uid" ] || fail 'sudoers installation requires sudo'
+      source=$1
+      user=$2
+      /usr/bin/id -u "$user" >/dev/null || fail "account does not exist: $user"
+      helper=\#(quote(Awaken.helperPath))
+      rule=\#(quote(rulePath))
+      helper_dir=${helper%/*}
+      trusted "${rule%/*}" directory
+      trusted /Library directory
+      if [ -e "$helper_dir" ] || [ -L "$helper_dir" ]; then
+        trusted "$helper_dir" directory
+      else
+        /bin/mkdir -m 755 "$helper_dir"
+      fi
+
+      rule_tmp=
+      helper_tmp=
+      cleanup() {
+        [ -z "$rule_tmp" ] || /bin/rm -f "$rule_tmp"
+        [ -z "$helper_tmp" ] || /bin/rm -f "$helper_tmp"
+      }
+      trap cleanup 0
+      trap 'exit 1' HUP INT TERM
+      rule_tmp=$(/usr/bin/mktemp "${rule%/*}/.awaken-XXXXXXXX")
+      /bin/cat >"$rule_tmp" <<'AWAKEN_RULE'
+      \#(contents.dropLast())
+      AWAKEN_RULE
+
+      rule_exists=false
+      if [ -e "$rule" ] || [ -L "$rule" ]; then
+        trusted "$rule" file
+        /usr/bin/cmp -s "$rule" "$rule_tmp" || fail "refusing to overwrite unrelated $rule"
+        rule_exists=true
+      fi
+      helper_exists=false
+      if [ -e "$helper" ] || [ -L "$helper" ]; then
+        trusted "$helper" file
+        [ "$rule_exists" = true ] || fail 'refusing to replace an unrecognised helper'
+        helper_exists=true
+      fi
+
+      /usr/sbin/chown 0:0 "$rule_tmp"
+      /bin/chmod 440 "$rule_tmp"
+      /usr/sbin/visudo -c -f "$rule_tmp"
+      helper_tmp=$(/usr/bin/mktemp "$helper_dir/.awaken-XXXXXXXX")
+      /bin/cp "$source" "$helper_tmp"
+      /usr/sbin/chown 0:0 "$helper_tmp"
+      /bin/chmod 755 "$helper_tmp"
+      /bin/mv -f "$helper_tmp" "$helper"
+      if ! /bin/mv -f "$rule_tmp" "$rule"; then
+        [ "$helper_exists" = true ] || /bin/rm -f "$helper"
+        fail 'cannot install sudoers fragment'
+      fi
+      printf 'Installed sudoers rule and root worker for %s.\n' "$user"
+      AWAKEN_SUDOERS
+      }
+      awaken_sudoers
+      """#
   }
 
   static func rule(user: String) throws -> String {
@@ -33,8 +112,8 @@ enum Installer {
     if path != "/" { try checkTrustedFile(parent, directory: true) }
   }
 
-  static func run(user: String, uninstall: Bool) throws {
-    guard geteuid() == 0 else { throw Failure("sudoers installation requires sudo") }
+  static func uninstall(user: String) throws {
+    guard geteuid() == 0 else { throw Failure("sudoers removal requires sudo") }
     guard getpwnam(user) != nil else { throw Failure("account does not exist: \(user)") }
     let contents = try rule(user: user)
     let manager = FileManager.default
@@ -43,10 +122,6 @@ enum Installer {
     try checkTrustedFile("/Library", directory: true)
     if manager.fileExists(atPath: helperDirectory) {
       try checkTrustedFile(helperDirectory, directory: true)
-    } else if !uninstall {
-      guard mkdir(helperDirectory, 0o755) == 0 else {
-        throw Failure("cannot create helper directory")
-      }
     }
 
     // Refuse files belonging to another installation or user, including dangling symlinks.
@@ -55,51 +130,19 @@ enum Installer {
     if ruleExists {
       try checkTrustedFile(rulePath)
       guard try String(contentsOfFile: rulePath, encoding: .utf8) == contents else {
-        throw Failure("refusing to overwrite or remove unrelated \(rulePath)")
+        throw Failure("refusing to remove unrelated \(rulePath)")
       }
     }
     let helperExists = lstat(Awaken.helperPath, &info) == 0
     if helperExists {
       try checkTrustedFile(Awaken.helperPath)
       guard ruleExists else {
-        throw Failure("refusing to replace or remove an unrecognised helper")
+        throw Failure("refusing to remove an unrecognised helper")
       }
     }
 
-    if uninstall {
-      if ruleExists { try manager.removeItem(atPath: rulePath) }
-      if helperExists { try manager.removeItem(atPath: Awaken.helperPath) }
-      print("Removed sudoers rule and root worker.")
-      return
-    }
-
-    let ruleTemporary = "/private/etc/sudoers.d/.awaken-\(UUID().uuidString)"
-    let helperTemporary = helperDirectory + "/.awaken-\(UUID().uuidString)"
-    defer {
-      try? manager.removeItem(atPath: ruleTemporary)
-      try? manager.removeItem(atPath: helperTemporary)
-    }
-    try Data(contents.utf8).write(
-      to: URL(fileURLWithPath: ruleTemporary), options: .withoutOverwriting)
-    guard chmod(ruleTemporary, 0o440) == 0, chown(ruleTemporary, 0, 0) == 0 else {
-      throw Failure("cannot secure sudoers fragment")
-    }
-    try runCommand("/usr/sbin/visudo", ["-c", "-f", ruleTemporary])
-
-    guard let source = Bundle.main.executableURL?.resolvingSymlinksInPath() else {
-      throw Failure("cannot locate the awaken executable")
-    }
-    try manager.copyItem(at: source, to: URL(fileURLWithPath: helperTemporary))
-    guard chmod(helperTemporary, 0o755) == 0, chown(helperTemporary, 0, 0) == 0 else {
-      throw Failure("cannot secure privileged worker")
-    }
-    guard rename(helperTemporary, Awaken.helperPath) == 0 else {
-      throw Failure("cannot install privileged worker")
-    }
-    guard rename(ruleTemporary, rulePath) == 0 else {
-      if !helperExists { try? manager.removeItem(atPath: Awaken.helperPath) }
-      throw Failure("cannot install sudoers fragment")
-    }
-    print("Installed sudoers rule and root worker for \(user).")
+    if ruleExists { try manager.removeItem(atPath: rulePath) }
+    if helperExists { try manager.removeItem(atPath: Awaken.helperPath) }
+    print("Removed sudoers rule and root worker.")
   }
 }

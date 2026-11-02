@@ -280,25 +280,6 @@ final class AwakenTests: XCTestCase {
     try runCommand("/usr/sbin/visudo", ["-c", "-f", file.path])
   }
 
-  func testSudoersSetupCommandPreservesShellMetacharacters() throws {
-    let executable = "/Users/O'Brien/a b/$(printf injected)/`printf injected`/awaken"
-    let command = try Installer.setupCommand(executable: executable, user: "test_user")
-    let shell = Process()
-    let output = Pipe()
-    shell.executableURL = URL(fileURLWithPath: "/bin/zsh")
-    // set only assigns arguments; the generated sudo command is never executed.
-    shell.arguments = ["-fc", "set -- \(command); printf '%s\\0' \"$@\""]
-    shell.standardOutput = output
-    try shell.run()
-    shell.waitUntilExit()
-    let expected = ["/usr/bin/sudo", "--", executable, "--install-sudoers", "test_user"]
-    XCTAssertEqual(shell.terminationStatus, 0)
-    XCTAssertEqual(
-      output.fileHandleForReading.readDataToEndOfFile(),
-      Data((expected.joined(separator: "\0") + "\0").utf8))
-    XCTAssertThrowsError(try Installer.setupCommand(executable: executable, user: "bad\nALL"))
-  }
-
 }
 
 private final class FakePower {

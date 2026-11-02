@@ -25,8 +25,8 @@ enum Awaken {
 
     Setup:
       make install               Install into XDG_BIN_HOME or ~/.local/bin.
-      awaken sudoers             Print the passwordless setup command.
-      eval "$(awaken sudoers)"    Install the root worker and sudoers rule.
+      awaken sudoers             Print the sudoers setup function.
+      eval "$(awaken sudoers)"    Define and run the setup function.
       make uninstall-sudoers     Remove the worker and rule from source.
 
     Rerun sudoers setup after updates. No background service is installed.
@@ -46,16 +46,14 @@ enum Awaken {
           throw Failure("cannot locate the executable or current account")
         }
         print(
-          try Installer.setupCommand(
+          try Installer.setupScript(
             executable: executable, user: String(cString: user.pointee.pw_name)))
         return
       } else if arguments == ["--privileged-worker"] {
         guard geteuid() == 0 else { throw Failure("worker requires root") }
         try worker(cancellation)
-      } else if arguments.count == 2,
-        arguments[0] == "--install-sudoers" || arguments[0] == "--uninstall-sudoers"
-      {
-        try Installer.run(user: arguments[1], uninstall: arguments[0] == "--uninstall-sudoers")
+      } else if arguments.count == 2, arguments[0] == "--uninstall-sudoers" {
+        try Installer.uninstall(user: arguments[1])
       } else {
         let options = try Options.parse(arguments)
         if options.version {

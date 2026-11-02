@@ -240,6 +240,7 @@ final class CLIIntegrationTests: XCTestCase {
   func testCliRejectsWorkerExtraArgumentsAndInvalidTimeouts() throws {
     for arguments in [
       ["--privileged-worker", "extra"], ["-t", "0"], ["--lid"], ["sudoers", "extra"],
+      ["--install-sudoers", "test_user"],
     ] {
       let (process, _) = try launch(arguments)
       defer { stopIfRunning(process) }
@@ -258,13 +259,13 @@ final class CLIIntegrationTests: XCTestCase {
     XCTAssertEqual(text, "awaken: worker requires root\n")
   }
 
-  func testSudoersSubcommandPrintsOnlyTheSetupCommand() throws {
+  func testSudoersSubcommandPrintsOnlyTheSetupFunctionAndInvocation() throws {
     let (process, output) = try launch(["sudoers"])
     defer { stopIfRunning(process) }
     waitForExit(process)
     let text = String(decoding: output.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
     let user = try XCTUnwrap(getpwuid(getuid()))
-    let expected = try Installer.setupCommand(
+    let expected = try Installer.setupScript(
       executable: executable.resolvingSymlinksInPath().path,
       user: String(cString: user.pointee.pw_name)
     )

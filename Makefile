@@ -27,7 +27,7 @@ uninstall:
 	rm -f "$(BINDIR)/awaken"
 
 install-sudoers: build
-	sudo -- "$(EXECUTABLE)" --install-sudoers "$(ACCOUNT)"
+	@setup="$$("$(EXECUTABLE)" sudoers)" && eval "$$setup"
 
 uninstall-sudoers: build
 	sudo -- "$(EXECUTABLE)" --uninstall-sudoers "$(ACCOUNT)"

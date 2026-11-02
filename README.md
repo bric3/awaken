@@ -58,11 +58,13 @@ sudo "$(command -v awaken)" --ignore-lid -t 120
 Optional passwordless setup:
 
 ```sh
-awaken sudoers            # Inspect the quoted setup command
-eval "$(awaken sudoers)"  # Authenticate and install
+awaken sudoers            # Inspect the shell setup function
+eval "$(awaken sudoers)"  # Define and run awaken_sudoers
 ```
 
-Setup installs `/Library/PrivilegedHelperTools/awaken` and `/private/etc/sudoers.d/awaken`. The rule permits only the root-owned worker command. The installer checks ownership, validates the rule with `visudo`, and refuses unrelated files. No background service is installed.
+`awaken sudoers` prints a POSIX shell function named `awaken_sudoers` followed by its invocation. Evaluating the output authenticates through sudo and performs installation with shell commands. The function remains available in the current shell.
+
+Setup installs `/Library/PrivilegedHelperTools/awaken` and `/private/etc/sudoers.d/awaken`. The rule permits only the root-owned worker command. The function checks ownership, validates the rule with `visudo`, and refuses unrelated files. No background service is installed.
 
 Rerun setup after updating the executable to refresh the worker protocol. Stop active sessions before removal:
 
