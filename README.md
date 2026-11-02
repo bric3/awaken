@@ -128,44 +128,18 @@ Record the current System Settings values. Set the idle interval to one minute i
 
 `pmset -g assertions` should show Awaken's `PreventUserIdleSystemSleep`, `PreventUserIdleDisplaySleep` and `UserIsActive` assertions during step 2. Assertions confirm requests to macOS; the idle test confirms the visible result. Preview, hot corners and explicit locking do not test automatic activation.
 
-## Build and versions
+## Build
 
 ```sh
 make build
 make test
 ```
 
-SwiftPM generates an embedded version; the installed tool needs neither Git nor a version file. Local builds use reachable Git tags:
-
-| Source state                    | Embedded version |
-| ------------------------------- | ---------------- |
-| No release tags or Git metadata | `0.1.0-SNAPSHOT` |
-| Clean checkout at `v0.1.0-rc.1` | `0.1.0-rc.1`     |
-| Clean checkout at `v0.1.0`      | `0.1.0`          |
-| Development after either tag    | `0.1.1-SNAPSHOT` |
-
-Development uses the highest reachable release version, removes its prerelease suffix, increments the patch, and appends `-SNAPSHOT`. Dirty builds use the development version. Master CI forces snapshot mode even when HEAD has a release tag.
-
-The tests cover parsing, clocks, terminal output, worker messages, cleanup, native assertions, Git version transitions and release coordination. Global power-setting changes and GitHub API writes use substitutes.
+The tests cover parsing, clocks, terminal output, worker messages, cleanup and native assertions. Global power-setting changes use substitutes.
 
 Physical lid-close operation, privileged installation and actual idle screensaver suppression remain unverified. Verify these on the target Mac before relying on them.
 
-## GitHub releases
-
-The [workflow](.github/workflows/release.yml) uses GitHub's built-in token with `contents: write`. Keep release immutability disabled: assets are uploaded after publication. Runs are serialised; stale master builds skip draft updates.
-
-**Development:** each successful `master` build creates or updates one managed draft. It suggests the next final tag and targets the built commit without creating a Git tag. Snapshot assets have a `-SNAPSHOT` filename suffix. The managed body block records the version and commit; user notes, title and tag selection are preserved. Existing Git tags are never moved. Failed builds leave the previous draft intact.
-
-**Publish:** open the draft or create a release in GitHub. Choose a new tag and its target commit:
-
-| Tag           | Prerelease checkbox | Embedded version |
-| ------------- | ------------------- | ---------------- |
-| `v0.1.0-rc.1` | Checked             | `0.1.0-rc.1`     |
-| `v0.1.0`      | Unchecked           | `0.1.0`          |
-
-Click **Publish release**. [The published event](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#release) tests and rebuilds the exact tag, verifies its version, signs both architectures, and uploads the binary and checksum. Snapshot assets are removed after a successful upload. Draft saves do not trigger release builds. Reruns replace the workflow's assets and preserve release notes.
-
-To finalise a candidate, create a new final tag and release. Changing the prerelease checkbox does not rename an `-rc.N` version. Assets appear after the build succeeds; monitor the Actions run for failures.
+See [RELEASING.md](RELEASING.md) for versioning, draft builds and release publication.
 
 ## Licence
 

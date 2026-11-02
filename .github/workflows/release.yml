@@ -26,9 +26,9 @@ jobs:
       AWAKEN_RELEASE_TAG: ${{ github.event_name == 'release' && github.event.release.tag_name || '' }}
       AWAKEN_SNAPSHOT: ${{ github.event_name == 'push' && '1' || '' }}
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ github.event.release.tag_name || github.sha }}
+          ref: ${{ github.sha }}
           fetch-depth: 0
           persist-credentials: false
 
@@ -42,12 +42,18 @@ jobs:
         run: make test
 
       - name: Build universal binary
-        run: swift build -c release --product awaken --arch arm64 --arch x86_64
+        run: |
+          swift build --scratch-path .build/arm64 -c release --product awaken --arch arm64
+          swift build --scratch-path .build/x86_64 -c release --product awaken --arch x86_64
 
       - name: Prepare assets
         run: |
           mkdir -p dist
-          install -m 755 "$(swift build -c release --product awaken --arch arm64 --arch x86_64 --show-bin-path)/awaken" dist/awaken-macos-universal
+          lipo -create \
+            "$(swift build --scratch-path .build/arm64 -c release --product awaken --arch arm64 --show-bin-path)/awaken" \
+            "$(swift build --scratch-path .build/x86_64 -c release --product awaken --arch x86_64 --show-bin-path)/awaken" \
+            -output dist/awaken-macos-universal
+          chmod 755 dist/awaken-macos-universal
           codesign --force --sign - dist/awaken-macos-universal
           codesign --verify --strict dist/awaken-macos-universal
           lipo dist/awaken-macos-universal -verify_arch arm64
