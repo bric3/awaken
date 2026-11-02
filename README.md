@@ -12,9 +12,9 @@ awaken                        # Prevent idle sleep for 300 seconds
 awaken -t 30m                 # Run for 30 minutes
 awaken -t 2h                  # Run for two hours
 awaken -t 1d                  # Run for 24 hours
-awaken --ignore-lid           # Requires root or passwordless sudo
+awaken --ignore-lid           # Requires root or password-less sudo
 awaken --prevent-screensaver  # Keep the display awake
-awaken --version             # Print the embedded build version
+awaken --version              # Print the embedded build version
 ```
 
 | Short | Option                  | Behaviour                                      |
