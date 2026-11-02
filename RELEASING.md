@@ -2,7 +2,7 @@
 
 The [workflow](.github/workflows/release.yml) builds on pushes to `master` and on GitHub's `release: published` event. It uses `GITHUB_TOKEN` with `contents: write`. Runs are serialised; stale master builds skip draft updates.
 
-Keep release immutability disabled: the published-release job uploads assets after publication.
+Keep release immutability disabled: the published-release job uploads assets after publication. Draft refreshes replace all assets with the universal binary and its checksum. Published-release uploads replace those two files and preserve other assets.
 
 ## Versions
 
@@ -15,19 +15,21 @@ SwiftPM embeds the version in the executable. The installed tool needs neither G
 | Clean checkout at `v0.1.0`      | `0.1.0`          |
 | Development after either tag    | `0.1.1-SNAPSHOT` |
 
-Development uses the highest reachable release version, removes its prerelease suffix, increments the patch, and appends `-SNAPSHOT`. Dirty builds use the development version. Master CI forces snapshot mode even when HEAD has a release tag.
+Development uses the highest reachable release version, removes its prerelease suffix, increments the patch, and appends `-SNAPSHOT`. Dirty builds use the development version. Master CI uses snapshot mode when there is no draft to refresh.
 
 Release builds require a clean checkout at the selected tag. The embedded version must match the tag without its leading `v`.
 
 ## Development draft
 
-Each successful current `master` build creates or updates one managed draft. It suggests the next final tag and targets the built commit without creating a Git tag.
+Create a draft in GitHub with its intended version tag, such as `v0.1.0` or `v0.1.0-rc.1`, and set the prerelease checkbox to match. Leave the Git tag uncreated until publication.
 
-The draft carries `awaken-macos-universal-SNAPSHOT` and its `.sha256` file. The build marker or snapshot binary identifies the managed draft. Its managed body block records the embedded version and commit. Replacing the release notes in GitHub preserves automatic updates: the next build appends the missing block. User notes, title and tag selection are preserved. Unrelated drafts and existing Git tags remain unchanged. Failed builds leave the previous draft intact.
+Each successful current `master` build refreshes the newest draft by creation date. CI preserves its title, release notes, tag and prerelease flag, updates the target commit, and uploads `awaken-macos-universal` and its `.sha256` file. The executable embeds the draft's version. CI creates the tag only in its private checkout for versioning, then verifies the updated target and uploads.
+
+When there is no draft, CI tests and builds a snapshot without uploading it. An existing Git tag causes draft preparation to fail. Stale master builds and drafts changed during a build skip the update. A test or build failure leaves the draft unchanged; upload failures fail the run and can leave incomplete assets. Check the successful Actions run before publishing. Saving a draft does not start a build; create it before the next push to `master`.
 
 ## Publish from GitHub
 
-Open the managed draft or create a release. Select the target commit and a new tag:
+Open the refreshed draft or create a release. Select the target commit and a new tag:
 
 | Tag           | Prerelease checkbox | Embedded version |
 | ------------- | ------------------- | ---------------- |
@@ -36,25 +38,25 @@ Open the managed draft or create a release. Select the target commit and a new t
 
 Click **Publish release**. [The published event](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#release) covers stable releases and prereleases, including publication from a draft. The job checks out the exact tag, tests it, builds and signs both architectures, verifies the embedded version, then uploads `awaken-macos-universal` and its `.sha256` file to that release.
 
-Snapshot assets are removed after a successful upload. Saving a draft does not trigger a release build. Reruns replace workflow assets and preserve release notes.
+Published releases use `gh release upload --clobber` to replace the binary and checksum. This preserves release metadata and avoids [GitHub's workflow-permission check when updating a release target](https://docs.github.com/en/rest/releases/releases#update-a-release). Reruns preserve the title, release notes, prerelease flag and other assets.
 
 To finalise a candidate, create a new final tag and release. Changing the prerelease checkbox does not rename an `-rc.N` version. Assets appear after the build succeeds; monitor the Actions run for failures.
 
 ## Publish from the CLI
 
-Create a prerelease:
+Create a draft prerelease before the next push to `master`:
 
 ```sh
-gh release create v0.1.0-rc.1 --target master --prerelease --generate-notes
+gh release create v0.1.0-rc.1 --target master --draft --prerelease --generate-notes
 ```
 
-Publish the existing final draft:
+After CI refreshes its assets, publish it:
 
 ```sh
-gh release edit v0.1.0 --draft=false
+gh release edit v0.1.0-rc.1 --draft=false
 ```
 
-Both operations use the same published-release workflow as the GitHub interface. Creating a release with `gh release create --draft` leaves it unpublished and does not start a release build.
+Publication uses the same published-release workflow as the GitHub interface. Omit `--prerelease` and use a final version tag to prepare a stable release.
 
 ## Universal build
 

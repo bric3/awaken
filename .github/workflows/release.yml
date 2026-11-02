@@ -32,6 +32,30 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
+      - name: Select newest draft release
+        if: github.event_name == 'push'
+        id: draft
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
+        with:
+          script: |
+            const releases = await github.paginate(github.rest.repos.listReleases, context.repo);
+            const draft = releases.filter(r => r.draft)
+              .sort((a, b) => b.created_at.localeCompare(a.created_at))[0];
+            if (!draft) return core.notice('No draft release to refresh.');
+            core.setOutput('id', draft.id);
+            core.setOutput('tag', draft.tag_name);
+            core.setOutput('prerelease', draft.prerelease);
+
+      - name: Prepare draft version
+        if: steps.draft.outputs.id != ''
+        env:
+          RELEASE_TAG: ${{ steps.draft.outputs.tag }}
+          PRERELEASE: ${{ steps.draft.outputs.prerelease }}
+        run: |
+          swift run ReleaseTool validate "$RELEASE_TAG" "$PRERELEASE"
+          git tag --no-sign "$RELEASE_TAG" "$GITHUB_SHA"
+          echo "AWAKEN_RELEASE_TAG=$RELEASE_TAG" >> "$GITHUB_ENV"
+
       - name: Validate release version
         if: github.event_name == 'release'
         env:
@@ -59,21 +83,81 @@ jobs:
           lipo dist/awaken-macos-universal -verify_arch arm64
           lipo dist/awaken-macos-universal -verify_arch x86_64
           dist/awaken-macos-universal --version
-          cp dist/awaken-macos-universal dist/awaken-macos-universal-SNAPSHOT
           cd dist
           shasum -a 256 awaken-macos-universal > awaken-macos-universal.sha256
-          shasum -a 256 awaken-macos-universal-SNAPSHOT > awaken-macos-universal-SNAPSHOT.sha256
 
-      - name: Update development draft
-        if: github.event_name == 'push'
+      - name: Verify embedded release version
+        if: env.AWAKEN_RELEASE_TAG != ''
+        run: test "$(dist/awaken-macos-universal --version)" = "awaken ${AWAKEN_RELEASE_TAG#v}"
+
+      - name: Check draft before updating
+        if: steps.draft.outputs.id != ''
+        id: current
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
         env:
-          GH_TOKEN: ${{ github.token }}
-          GH_REPO: ${{ github.repository }}
-        run: swift run ReleaseTool draft "$PWD/dist"
+          RELEASE_ID: ${{ steps.draft.outputs.id }}
+          PRERELEASE: ${{ steps.draft.outputs.prerelease }}
+        with:
+          script: |
+            const {data: branch} = await github.rest.repos.getBranch({...context.repo, branch: 'master'});
+            const {data: draft} = await github.rest.repos.getRelease({
+              ...context.repo, release_id: Number(process.env.RELEASE_ID)
+            });
+            const {data: refs} = await github.rest.git.listMatchingRefs({
+              ...context.repo, ref: `tags/${process.env.AWAKEN_RELEASE_TAG}`
+            });
+            if (branch.commit.sha !== context.sha || !draft.draft ||
+                draft.tag_name !== process.env.AWAKEN_RELEASE_TAG ||
+                String(draft.prerelease) !== process.env.PRERELEASE ||
+                refs.some(r => r.ref === `refs/tags/${process.env.AWAKEN_RELEASE_TAG}`)) {
+              return core.notice('Build, draft or tag changed; skipped draft update.');
+            }
+            core.setOutput('ready', 'true');
 
-      - name: Upload release assets
+      - name: Update selected draft release
+        if: steps.current.outputs.ready == 'true'
+        uses: ncipollo/release-action@339a81892b84b4eeb0f6e744e4574d79d0d9b8dd # v1
+        with:
+          tag: ${{ env.AWAKEN_RELEASE_TAG }}
+          commit: ${{ github.sha }}
+          draft: true
+          allowUpdates: true
+          updateOnlyUnreleased: true
+          skipIfReleaseExists: true
+          omitDraftDuringUpdate: true
+          omitBodyDuringUpdate: true
+          omitNameDuringUpdate: true
+          omitPrereleaseDuringUpdate: true
+          removeArtifacts: true
+          artifactErrorsFailBuild: true
+          artifacts: dist/*
+          makeLatest: false
+
+      - name: Upload published release assets
         if: github.event_name == 'release'
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
-        run: swift run ReleaseTool publish "$PWD/dist"
+        # Metadata updates can require workflow permission when the release target's workflow files differ from master.
+        run: gh release upload "$AWAKEN_RELEASE_TAG" dist/* --clobber
+
+      - name: Verify updated release
+        if: github.event_name == 'release' || steps.current.outputs.ready == 'true'
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
+        env:
+          RELEASE_ID: ${{ github.event_name == 'release' && github.event.release.id || steps.draft.outputs.id }}
+          PRERELEASE: ${{ github.event_name == 'release' && toJSON(github.event.release.prerelease) || steps.draft.outputs.prerelease }}
+        with:
+          script: |
+            const {data: release} = await github.rest.repos.getRelease({
+              ...context.repo, release_id: Number(process.env.RELEASE_ID)
+            });
+            const names = ['awaken-macos-universal', 'awaken-macos-universal.sha256'];
+            const draftBuild = context.eventName === 'push';
+            if (release.draft !== draftBuild ||
+                release.tag_name !== process.env.AWAKEN_RELEASE_TAG ||
+                String(release.prerelease) !== process.env.PRERELEASE ||
+                (draftBuild && (release.target_commitish !== context.sha || release.assets.length !== names.length)) ||
+                !names.every(name => release.assets.some(a => a.name === name && a.state === 'uploaded'))) {
+              core.setFailed('Release target or binary uploads were not updated.');
+            }
