@@ -2,6 +2,9 @@
 
 Timed sleep prevention for macOS 13+. Supports lid-close sessions on battery and AC power.
 
+> [!IMPORTANT]
+> Use at your own risk. Review the [safety notes](#safety) before using lid mode.
+
 ## Usage
 
 ```sh
@@ -53,15 +56,7 @@ make uninstall
 
 Ordinary sessions, including `--prevent-screensaver`, require no sudo. `--ignore-lid` starts a separate root worker and requires a readable internal battery and lid sensor.
 
-Lid mode fails immediately unless Awaken runs as root or sudo permits the exact worker command without a password. It uses `sudo -n -k`: no prompt and no cached credentials. Run an explicitly elevated session:
-
-```sh
-sudo "$(command -v awaken)" --ignore-lid -t 120
-```
-
-Before activation, Awaken checks the worker protocol. Compatible workers from a different build emit a warning and an update command; incompatible workers fail before receiving a session request. Binary comparison also detects different `SNAPSHOT` builds with the same version string. A compatible older worker can retain its older countdown format.
-
-Optional passwordless setup:
+Before using `--ignore-lid`, install the worker and its passwordless sudo rule:
 
 ```sh
 awaken sudoers            # Inspect the shell setup function
@@ -71,6 +66,16 @@ eval "$(awaken sudoers)"  # Define and run awaken_sudoers
 `awaken sudoers` prints a POSIX shell function named `awaken_sudoers` followed by its invocation. It refuses while Awaken is running. Evaluating the output authenticates through sudo and performs installation with shell commands, checking again before replacing files. The function remains available in the current shell.
 
 Setup installs `/Library/PrivilegedHelperTools/awaken` and `/private/etc/sudoers.d/awaken`. The rule permits only the root-owned worker command. The function checks ownership, validates the rule with `visudo`, and refuses unrelated files. No background service is installed.
+
+Run lid sessions directly after setup:
+
+```sh
+awaken --ignore-lid -t 1h
+```
+
+Lid mode fails immediately unless Awaken runs as root or sudo permits the exact worker command without a password. It uses `sudo -n -k`: no prompt and no cached credentials.
+
+Before activation, Awaken checks the worker protocol. Compatible workers from a different build emit a warning and an update command; incompatible workers fail before receiving a session request. Binary comparison also detects different `SNAPSHOT` builds with the same version string. A compatible older worker can retain its older countdown format.
 
 Rerun setup after updating the executable to refresh the worker protocol. Stop active sessions before removal:
 
@@ -83,19 +88,24 @@ make uninstall-sudoers   # Remove the rule and root worker
 
 ## Safety
 
-- Expiry uses a continuous monotonic clock: NTP, manual clock changes and time asleep do not extend sessions.
-- The worker restores sleep on foreground disconnection, including crashes and `SIGKILL`, and handles SIGINT, SIGTERM and SIGHUP.
-- Lid mode refuses existing sleep prevention and concurrent Awaken lid sessions. It stops at battery charge <=10%, serious/critical thermal state, or unavailable safety readings, including on AC power.
-- Activation and restoration are verified. Partial activation failures trigger cleanup.
-- Ending a lid session restores sleep and requests immediate sleep if the lid is closed.
+> [!NOTE]
+>
+> - Expiry uses a continuous monotonic clock: NTP and manual clock changes neither extend nor shorten sessions. Time asleep counts towards expiry.
+> - The worker restores sleep on foreground disconnection, including crashes and `SIGKILL`, and handles SIGINT, SIGTERM and SIGHUP.
+> - Lid mode refuses existing sleep prevention and concurrent Awaken lid sessions. It stops at battery charge <=10%, serious/critical thermal state, or unavailable safety readings, including on AC power.
+> - Activation and restoration are verified. Partial activation failures trigger cleanup.
+> - Ending a lid session restores sleep and requests immediate sleep if the lid is closed.
 
-Lid mode changes the global, undocumented `SleepDisabled` setting through [`pmset`](https://github.com/apple-oss-distributions/PowerManagement/blob/main/pmset/pmset.m). Avoid concurrent lid-control tools. Idle-sleep timers and saved screensaver settings remain unchanged.
-
-Killing or suspending the root worker can leave sleep disabled. OS failure and reboot recovery are not guaranteed. Keep the Mac ventilated. Manual recovery:
-
-```sh
-sudo pmset -a disablesleep 0
-```
+> [!WARNING]
+> Lid mode changes the global, undocumented `SleepDisabled` setting through [`pmset`](https://github.com/apple-oss-distributions/PowerManagement/blob/main/pmset/pmset.m). Avoid concurrent lid-control tools. Idle-sleep timers and saved screensaver settings remain unchanged.
+>
+> Killing or suspending the root worker can leave sleep disabled. OS failure and reboot recovery are not guaranteed.
+>
+> **Keep the Mac ventilated.** Manual recovery:
+>
+> ```sh
+> sudo pmset -a disablesleep 0
+> ```
 
 ## Manual checks
 
@@ -106,7 +116,7 @@ Run these on the target Mac. Quit other keep-awake tools first.
 Disconnect external displays and docks to avoid macOS closed-display mode. Use a ventilated surface and battery charge above 10%.
 
 1. With Awaken stopped, close the lid for 15 seconds, then reopen it. Confirm a lid-triggered sleep entry in the log below. Record the timestamps for each test.
-2. Run `awaken --ignore-lid -t 120`. Use the explicit sudo command above if passwordless setup is absent. Wait for the active session message, close the lid for 30 seconds, then reopen it before expiry. No system sleep entry should occur during this interval.
+2. Complete the [worker setup](#privileges), then run `awaken --ignore-lid -t 120`. Wait for the active session message, close the lid for 30 seconds, then reopen it before expiry. No system sleep entry should occur during this interval.
 3. Press Ctrl-C. `SleepDisabled` should return to `No`.
 4. Run a new 60-second lid session, close the lid and wait 90 seconds before reopening it. The log should show sleep near expiry; `SleepDisabled` should be `No`.
 5. Repeat on battery and AC power.
