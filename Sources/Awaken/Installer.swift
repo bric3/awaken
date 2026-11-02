@@ -6,17 +6,60 @@ import Foundation
 enum Installer {
   static let rulePath = "/private/etc/sudoers.d/awaken"
 
+  private static func processPattern(executable: String) -> String {
+    let name = NSRegularExpression.escapedPattern(
+      for: URL(fileURLWithPath: executable).lastPathComponent)
+    return "awaken|awaken-macos-universal(-SNAPSHOT)?|\(name)"
+  }
+
+  static func checkNotInUse(executable: String) throws {
+    let process = Process()
+    let output = Pipe()
+    process.executableURL = URL(fileURLWithPath: "/usr/bin/pgrep")
+    process.arguments = ["-a", "-x", processPattern(executable: executable)]
+    process.standardOutput = output
+    process.standardError = FileHandle.nullDevice
+    try process.run()
+    output.fileHandleForWriting.closeFile()
+    let data = output.fileHandleForReading.readDataToEndOfFile()
+    process.waitUntilExit()
+    guard process.terminationStatus == 0 || process.terminationStatus == 1 else {
+      throw Failure("cannot check whether Awaken is in use")
+    }
+    let processes = String(decoding: data, as: UTF8.self).split(separator: "\n").compactMap {
+      Int32($0)
+    }
+    guard process.terminationStatus == 1 || !processes.isEmpty else {
+      throw Failure("cannot check whether Awaken is in use")
+    }
+    try requireIdle(processes: processes, currentPID: getpid())
+  }
+
+  static func requireIdle(processes: [Int32], currentPID: Int32) throws {
+    guard processes.allSatisfy({ $0 == currentPID }) else {
+      throw Failure("Awaken is in use; stop all sessions before updating sudoers")
+    }
+  }
+
   static func setupScript(executable: String, user: String) throws -> String {
     let contents = try rule(user: user)
     let quote: (String) -> String = { "'" + $0.replacingOccurrences(of: "'", with: "'\\''") + "'" }
     return #"""
       awaken_sudoers() {
-        /usr/bin/sudo -- /bin/sh -s -- \#(quote(executable)) \#(quote(user)) <<'AWAKEN_SUDOERS'
+        /usr/bin/sudo -- /bin/sh -s -- \#(quote(executable)) \#(quote(user)) \#(quote(processPattern(executable: executable))) <<'AWAKEN_SUDOERS'
       set -eu
       umask 077
       root_uid=0
+      process_pattern=$3
 
       fail() { printf 'awaken: %s\n' "$*" >&2; exit 1; }
+      idle() {
+        if /usr/bin/pgrep -a -x "$process_pattern" >/dev/null; then
+          fail 'Awaken is in use; stop all sessions before updating sudoers'
+        else
+          [ "$?" -eq 1 ] || fail 'cannot check whether Awaken is in use'
+        fi
+      }
       trusted() {
         [ ! -L "$1" ] || fail "$1 must not be a symlink"
         if [ "$2" = directory ]; then
@@ -32,6 +75,7 @@ enum Installer {
       }
 
       [ "$(/usr/bin/id -u)" -eq "$root_uid" ] || fail 'sudoers installation requires sudo'
+      idle
       source=$1
       user=$2
       /usr/bin/id -u "$user" >/dev/null || fail "account does not exist: $user"
@@ -79,6 +123,7 @@ enum Installer {
       /bin/cp "$source" "$helper_tmp"
       /usr/sbin/chown 0:0 "$helper_tmp"
       /bin/chmod 755 "$helper_tmp"
+      idle
       /bin/mv -f "$helper_tmp" "$helper"
       if ! /bin/mv -f "$rule_tmp" "$rule"; then
         [ "$helper_exists" = true ] || /bin/rm -f "$helper"

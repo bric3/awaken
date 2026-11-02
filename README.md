@@ -59,6 +59,8 @@ Lid mode fails immediately unless Awaken runs as root or sudo permits the exact 
 sudo "$(command -v awaken)" --ignore-lid -t 120
 ```
 
+Before activation, Awaken checks the worker protocol. Compatible workers from a different build emit a warning and an update command; incompatible workers fail before receiving a session request. Binary comparison also detects different `SNAPSHOT` builds with the same version string. A compatible older worker can retain its older countdown format.
+
 Optional passwordless setup:
 
 ```sh
@@ -66,7 +68,7 @@ awaken sudoers            # Inspect the shell setup function
 eval "$(awaken sudoers)"  # Define and run awaken_sudoers
 ```
 
-`awaken sudoers` prints a POSIX shell function named `awaken_sudoers` followed by its invocation. Evaluating the output authenticates through sudo and performs installation with shell commands. The function remains available in the current shell.
+`awaken sudoers` prints a POSIX shell function named `awaken_sudoers` followed by its invocation. It refuses while Awaken is running. Evaluating the output authenticates through sudo and performs installation with shell commands, checking again before replacing files. The function remains available in the current shell.
 
 Setup installs `/Library/PrivilegedHelperTools/awaken` and `/private/etc/sudoers.d/awaken`. The rule permits only the root-owned worker command. The function checks ownership, validates the rule with `visudo`, and refuses unrelated files. No background service is installed.
 

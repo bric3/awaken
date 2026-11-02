@@ -274,6 +274,9 @@ final class CLIIntegrationTests: XCTestCase {
   }
 
   func testSudoersSubcommandPrintsOnlyTheSetupFunctionAndInvocation() throws {
+    do { try Installer.checkNotInUse(executable: executable.path) } catch {
+      throw XCTSkip("requires an idle Mac with process inspection available: \(error)")
+    }
     let (process, output) = try launch(["sudoers"])
     defer { stopIfRunning(process) }
     waitForExit(process)
@@ -285,6 +288,22 @@ final class CLIIntegrationTests: XCTestCase {
     )
     XCTAssertEqual(process.terminationStatus, 0)
     XCTAssertEqual(text, expected + "\n")
+  }
+
+  func testSudoersRefusesWhileAwakenIsRunning() throws {
+    do { try Installer.checkNotInUse(executable: executable.path) } catch {
+      throw XCTSkip("requires an idle Mac with process inspection available: \(error)")
+    }
+    let (session, sessionOutput) = try launch(["-t", "30"])
+    defer { stopIfRunning(session) }
+    try waitForActivation(sessionOutput)
+    let (setup, output) = try launch(["sudoers"])
+    defer { stopIfRunning(setup) }
+    waitForExit(setup)
+    let text = String(decoding: output.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
+    XCTAssertEqual(setup.terminationStatus, 1)
+    XCTAssertTrue(text.contains("Awaken is in use"), text)
+    XCTAssertFalse(text.contains("awaken_sudoers()"), text)
   }
 
   func testCommandTimeoutIsBounded() {

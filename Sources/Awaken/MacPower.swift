@@ -216,17 +216,19 @@ enum ControlPipe {
 }
 
 struct WorkerRequest: Equatable {
+  // Bump this when requests or startup handshakes become incompatible.
+  static let protocolVersion = 3
   let seconds: UInt64
   let showCountdown: Bool
   let preventScreensaver: Bool
 
   var message: String {
-    "AWAKEN/3 \(seconds) \(showCountdown ? 1 : 0) \(preventScreensaver ? 1 : 0)\n"
+    "AWAKEN/\(Self.protocolVersion) \(seconds) \(showCountdown ? 1 : 0) \(preventScreensaver ? 1 : 0)\n"
   }
 
   static func parse(_ line: String) throws -> WorkerRequest {
     let fields = line.split(separator: " ", omittingEmptySubsequences: false)
-    guard fields.first == "AWAKEN/3" else {
+    guard fields.first == "AWAKEN/\(Self.protocolVersion)" else {
       throw Failure("incompatible worker; refresh with eval \"$(awaken sudoers)\"")
     }
     guard fields.count == 4, ["0", "1"].contains(fields[2]), ["0", "1"].contains(fields[3]) else {

@@ -34,7 +34,10 @@ final class InstallerShellTests: XCTestCase {
     let prelude = #"""
       awaken_test_sudo() { printf '%s\0' "$@"; /bin/cat >/dev/null; return 17; }
       """#
-    let arguments = ["--", "/bin/sh", "-s", "--", executable, "test_user"]
+    let pattern =
+      "awaken|awaken-macos-universal(-SNAPSHOT)?|"
+      + NSRegularExpression.escapedPattern(for: URL(fileURLWithPath: executable).lastPathComponent)
+    let arguments = ["--", "/bin/sh", "-s", "--", executable, "test_user", pattern]
     for shell in ["/bin/sh", "/bin/bash", "/bin/zsh"] {
       let result = try evaluate(script, shell: shell, prelude: prelude)
       XCTAssertEqual(result.status, 17, result.output)
@@ -71,6 +74,44 @@ final class InstallerShellTests: XCTestCase {
       XCTAssertEqual(try fixture.permissions(fixture.rule), 0o440)
       try fixture.assertNoTemporaryFiles()
     }
+  }
+
+  func testShellRefusesActiveSessionsAndUnavailableProcessInspection() throws {
+    for active in [true, false] {
+      let fixture = try InstallFixture()
+      defer { fixture.remove() }
+      let command = active ? "/usr/bin/true" : "/bin/sh -c 'exit 2' --"
+      let script = fixture.script.replacingOccurrences(of: "/usr/bin/false", with: command)
+      let result = try evaluate(script)
+      XCTAssertNotEqual(result.status, 0, result.output)
+      XCTAssertTrue(
+        result.output.contains(active ? "Awaken is in use" : "cannot check"), result.output)
+      XCTAssertFalse(FileManager.default.fileExists(atPath: fixture.rule.path))
+      XCTAssertFalse(FileManager.default.fileExists(atPath: fixture.helper.path))
+      try fixture.assertNoTemporaryFiles()
+    }
+  }
+
+  func testShellRechecksActivityBeforeReplacingFiles() throws {
+    let fixture = try InstallFixture()
+    defer { fixture.remove() }
+    XCTAssertEqual(try evaluate(fixture.script).status, 0)
+    try Data("replacement".utf8).write(to: fixture.source)
+    let marker = fixture.directory.appendingPathComponent("active").path
+    let script = fixture.script
+      .replacingOccurrences(
+        of: "/usr/bin/false",
+        with: "/bin/sh -c 'test -e \"$1\"' -- '\(marker)'"
+      )
+      .replacingOccurrences(
+        of: #"/bin/chmod 755 "$helper_tmp""#,
+        with: #"/bin/chmod 755 "$helper_tmp""# + "\n/usr/bin/touch '\(marker)'")
+    let result = try evaluate(script)
+    XCTAssertNotEqual(result.status, 0, result.output)
+    XCTAssertTrue(result.output.contains("Awaken is in use"), result.output)
+    XCTAssertEqual(try String(contentsOf: fixture.helper), "worker")
+    XCTAssertEqual(try String(contentsOf: fixture.rule), fixture.contents)
+    try fixture.assertNoTemporaryFiles()
   }
 
   func testShellRefusesUnrelatedRulesAndUnrecognisedHelpers() throws {
@@ -187,6 +228,7 @@ private struct InstallFixture {
       .replacingOccurrences(of: "/usr/bin/sudo -- /bin/sh", with: "/bin/sh")
       .replacingOccurrences(of: "root_uid=0", with: "root_uid=\(geteuid())")
       .replacingOccurrences(of: "/usr/sbin/chown", with: "/usr/bin/true")
+      .replacingOccurrences(of: "/usr/bin/pgrep", with: "/usr/bin/false")
       .replacingOccurrences(of: "/Library", with: library.path)
       .replacingOccurrences(
         of: "/private/etc/sudoers.d", with: rule.deletingLastPathComponent().path

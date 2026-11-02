@@ -6,7 +6,7 @@ import Foundation
 @main
 enum Awaken {
   static let helperPath = "/Library/PrivilegedHelperTools/awaken"
-  static let workerReady = "AWAKEN-WORKER-READY/3\n"
+  static let workerReady = "AWAKEN-WORKER-READY/\(WorkerRequest.protocolVersion)\n"
   static let help = """
     Awaken \(BuildVersion.current)
 
@@ -30,7 +30,8 @@ enum Awaken {
       eval "$(awaken sudoers)"    Define and run the setup function.
       make uninstall-sudoers     Remove the worker and rule from source.
 
-    Rerun sudoers setup after updates. No background service is installed.
+    Compatible older worker builds emit a warning. Stop sessions before sudoers setup.
+    No background service is installed.
 
     Recovery: sudo pmset -a disablesleep 0
     Killing or suspending the worker can leave sleep disabled. Keep the Mac ventilated.
@@ -46,6 +47,7 @@ enum Awaken {
         else {
           throw Failure("cannot locate the executable or current account")
         }
+        try Installer.checkNotInUse(executable: executable)
         print(
           try Installer.setupScript(
             executable: executable, user: String(cString: user.pointee.pw_name)))
@@ -114,7 +116,16 @@ enum Awaken {
     status: Int32, diagnostics: String, usingSudo: Bool,
     report: (String) -> Void = { FileHandle.standardError.write(Data($0.utf8)) }
   ) throws -> Int32 {
-    guard let ready = diagnostics.range(of: workerReady) else {
+    guard
+      let ready = diagnostics.range(
+        of: #"(?m)^AWAKEN-WORKER-READY/[^\n]*\n"#, options: .regularExpression),
+      diagnostics[ready] == workerReady
+    else {
+      if diagnostics.contains("AWAKEN-WORKER-READY/") {
+        throw Failure(
+          "installed worker uses an incompatible protocol; update with eval \"$(awaken sudoers)\"\n\(diagnostics)"
+        )
+      }
       let requirement =
         usingSudo
         ? "--ignore-lid requires root or passwordless sudo; the privileged worker did not start."
@@ -126,6 +137,43 @@ enum Awaken {
     let message = diagnostics.replacingCharacters(in: ready, with: "")
     if !message.isEmpty { report(message) }
     return status
+  }
+
+  static func waitForWorkerReady(
+    _ descriptor: Int32, cancellation: Cancellation, timeout: UInt64 = 10
+  ) throws -> String {
+    let deadline = Deadline(seconds: timeout, now: continuousNanoseconds())
+    var bytes: [UInt8] = []
+    var line: [UInt8] = []
+    while !deadline.expired(at: continuousNanoseconds()), cancellation.signalNumber == 0 {
+      let byte: UInt8
+      do {
+        guard let next = try ControlPipe.readByte(descriptor, wait: 100) else { continue }
+        byte = next
+      } catch ControlPipe.Disconnected.foreground {
+        return String(decoding: bytes, as: UTF8.self)
+      }
+      guard bytes.count < 4096 else { throw Failure("worker startup diagnostics are too large") }
+      bytes.append(byte)
+      line.append(byte)
+      if byte == 10 {
+        if String(decoding: line, as: UTF8.self).hasPrefix("AWAKEN-WORKER-READY/") {
+          return String(decoding: bytes, as: UTF8.self)
+        }
+        line.removeAll(keepingCapacity: true)
+      }
+    }
+    if cancellation.signalNumber != 0 { return String(decoding: bytes, as: UTF8.self) }
+    throw Failure(
+      "worker did not announce a compatible protocol; update with eval \"$(awaken sudoers)\"")
+  }
+
+  static func workerBuildWarning(localExecutable: String, worker: String) -> String? {
+    guard !FileManager.default.contentsEqual(atPath: localExecutable, andPath: worker) else {
+      return nil
+    }
+    return
+      "awaken: warning: installed worker differs from this build; using compatible protocol \(WorkerRequest.protocolVersion).\nUpdate after stopping sessions: eval \"$(awaken sudoers)\"\n"
   }
 
   static func launchWorker(request: WorkerRequest, cancellation: Cancellation) throws -> Int32 {
@@ -149,6 +197,19 @@ enum Awaken {
     control.fileHandleForReading.closeFile()
     diagnostics.fileHandleForWriting.closeFile()
     defer { try? control.fileHandleForWriting.close() }
+    // Confirm the protocol before sending input that can change global power settings.
+    let greeting = try waitForWorkerReady(
+      diagnostics.fileHandleForReading.fileDescriptor, cancellation: cancellation)
+    if cancellation.signalNumber != 0 {
+      if process.isRunning { process.terminate() }
+      return 128 + cancellation.signalNumber
+    }
+    _ = try workerResult(status: 0, diagnostics: greeting, usingSudo: !isRoot)
+    if installed,
+      let warning = workerBuildWarning(localExecutable: localExecutable, worker: executable)
+    {
+      FileHandle.standardError.write(Data(warning.utf8))
+    }
     var requestError: Error?
     do {
       try control.fileHandleForWriting.write(contentsOf: Data(request.message.utf8))
@@ -172,7 +233,7 @@ enum Awaken {
     if process.terminationReason == .uncaughtSignal { return 128 + process.terminationStatus }
     if cancellation.signalNumber != 0 { return 128 + cancellation.signalNumber }
     let status = try workerResult(
-      status: process.terminationStatus, diagnostics: message, usingSudo: !isRoot)
+      status: process.terminationStatus, diagnostics: workerReady + message, usingSudo: !isRoot)
     if let requestError {
       throw Failure("cannot send the session to the privileged worker: \(requestError)")
     }
