@@ -27,7 +27,7 @@ final class ReleaseTests: XCTestCase {
     XCTAssertEqual(github.releases[0]["tag_name"] as? String, "v0.1.0")
     XCTAssertEqual(github.patches[0]["target_commitish"] as? String, "current")
     XCTAssertEqual(
-      github.uploads[0].1,
+      github.uploads.map(\.1),
       ["/dist/awaken-macos-universal-SNAPSHOT", "/dist/awaken-macos-universal-SNAPSHOT.sha256"])
     github.patches = []
     github.releases[0]["tag_name"] = "v0.2.0-rc.1"
@@ -39,7 +39,29 @@ final class ReleaseTests: XCTestCase {
     XCTAssertTrue(body.hasSuffix("\nMore notes"))
     XCTAssertNil(github.patches[0]["tag_name"])
     XCTAssertNil(github.patches[0]["name"])
-    XCTAssertEqual(github.uploads.last?.0, "v0.2.0-rc.1")
+    XCTAssertEqual(github.uploads.last?.0, 1)
+    XCTAssertEqual(github.releases[0]["tag_name"] as? String, "v0.2.0-rc.1")
+  }
+
+  func testDraftUploadUsesReleaseIDAndReplacesOnlyItsSnapshotAssets() throws {
+    let github = FakeGitHub()
+    var draft = github.release(
+      body: try DraftNotes.update(nil, version: "0.1.0-SNAPSHOT", sha: "old"))
+    draft["assets"] = [
+      ["id": 10, "name": "awaken-macos-universal-SNAPSHOT"],
+      ["id": 11, "name": "user-file"],
+      ["id": 12, "name": "awaken-macos-universal-SNAPSHOT.sha256"],
+    ]
+    github.releases = [draft]
+    try github.updateDraft()
+    XCTAssertEqual(github.uploads[0].0, 1)
+    XCTAssertEqual(
+      github.deleted,
+      ["repos/test/repo/releases/assets/10", "repos/test/repo/releases/assets/12"])
+    github.deleted = []
+    github.failUpload = true
+    XCTAssertThrowsError(try github.updateDraft())
+    XCTAssertEqual(github.deleted, ["repos/test/repo/releases/assets/10"])
   }
 
   func testUnrelatedDraftIsPreserved() throws {
@@ -91,7 +113,8 @@ final class ReleaseTests: XCTestCase {
     try github.coordinator().publish(
       id: 1, tag: "v0.1.0", prerelease: false, version: "0.1.0", directory: "/dist")
     XCTAssertEqual(
-      github.uploads[0].1, ["/dist/awaken-macos-universal", "/dist/awaken-macos-universal.sha256"])
+      github.uploads.map(\.1),
+      ["/dist/awaken-macos-universal", "/dist/awaken-macos-universal.sha256"])
     XCTAssertEqual(github.deleted, ["repos/test/repo/releases/assets/10"])
     XCTAssertTrue(github.patches.isEmpty)
     github.deleted = []
@@ -115,7 +138,7 @@ final class ReleaseTests: XCTestCase {
 private final class FakeGitHub {
   var releases: [[String: Any]] = []
   var patches: [[String: Any]] = []
-  var uploads: [(String, [String])] = []
+  var uploads: [(Int, String)] = []
   var deleted: [String] = []
   var publishedDuringRead = false
   var existingTag = false
@@ -159,9 +182,9 @@ private final class FakeGitHub {
         }
         return try JSONSerialization.data(withJSONObject: result)
       },
-      upload: { tag, paths in
+      upload: { id, path in
         if self.failUpload { throw NSError(domain: "test", code: 1) }
-        self.uploads.append((tag, paths))
+        self.uploads.append((id, path))
       }, report: { _ in })
   }
 }

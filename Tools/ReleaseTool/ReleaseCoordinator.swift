@@ -39,7 +39,7 @@ enum DraftNotes {
 struct ReleaseCoordinator {
   let repository: String
   var request: (_ method: String, _ path: String, _ fields: [String: Any]?) throws -> Data
-  var upload: (_ tag: String, _ paths: [String]) throws -> Void
+  var upload: (_ id: Int, _ path: String) throws -> Void
   var report: (String) -> Void = { print($0) }
 
   private func get<T: Decodable>(_ path: String, as: T.Type) throws -> T {
@@ -47,6 +47,18 @@ struct ReleaseCoordinator {
   }
 
   private func release(_ id: Int) throws -> Release { try get("releases/\(id)", as: Release.self) }
+
+  private func uploadAssets(_ id: Int, paths: [String]) throws {
+    let assets = try release(id).assets
+    for path in paths {
+      let name = URL(fileURLWithPath: path).lastPathComponent
+      for asset in assets where asset.name == name {
+        _ = try request("DELETE", "repos/\(repository)/releases/assets/\(asset.id)", nil)
+      }
+      // A draft can have a pending tag without a Git ref; upload directly to its release ID.
+      try upload(id, path)
+    }
+  }
 
   private func isCurrent(_ sha: String) throws -> Bool {
     struct Branch: Decodable {
@@ -121,9 +133,9 @@ struct ReleaseCoordinator {
       return
     }
     // Snapshot assets have distinct names so a concurrent UI publication cannot replace release binaries.
-    try upload(
-      draft.tagName,
-      [
+    try uploadAssets(
+      draft.id,
+      paths: [
         directory + "/awaken-macos-universal-SNAPSHOT",
         directory + "/awaken-macos-universal-SNAPSHOT.sha256",
       ])
@@ -145,8 +157,9 @@ struct ReleaseCoordinator {
     guard !current.draft, current.tagName == tag, current.prerelease == prerelease else {
       throw ToolError("release state changed; rerun from the intended release event")
     }
-    try upload(
-      tag, [directory + "/awaken-macos-universal", directory + "/awaken-macos-universal.sha256"])
+    try uploadAssets(
+      id,
+      paths: [directory + "/awaken-macos-universal", directory + "/awaken-macos-universal.sha256"])
     for asset in try release(id).assets
     where ["awaken-macos-universal-SNAPSHOT", "awaken-macos-universal-SNAPSHOT.sha256"].contains(
       asset.name)

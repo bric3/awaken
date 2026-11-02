@@ -33,9 +33,26 @@ enum ReleaseTool {
             "/usr/bin/env", args,
             input: fields.map { try JSONSerialization.data(withJSONObject: $0) })
         },
-        upload: { tag, paths in
+        upload: { id, path in
+          let file = URL(fileURLWithPath: path)
+          guard let size = try file.resourceValues(forKeys: [.fileSizeKey]).fileSize else {
+            throw ToolError("cannot read release asset size: \(path)")
+          }
+          var url = URLComponents(
+            string: "https://uploads.github.com/repos/\(repository)/releases/\(id)/assets")
+          url?.queryItems = [
+            URLQueryItem(name: "name", value: file.lastPathComponent)
+          ]
+          guard let endpoint = url?.url?.absoluteString else {
+            throw ToolError("invalid release upload URL")
+          }
           _ = try Command.run(
-            "/usr/bin/env", ["gh", "release", "upload", tag] + paths + ["--clobber"])
+            "/usr/bin/env",
+            [
+              "gh", "api", "--method", "POST", endpoint, "--input", path,
+              "--header", "Content-Type: application/octet-stream",
+              "--header", "Content-Length: \(size)",
+            ])
         })
       let binary = arguments[1] + "/awaken-macos-universal"
       let result = try Command.run(binary, ["--version"])
