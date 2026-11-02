@@ -55,10 +55,25 @@ Build from source with Swift 5.9+ and Xcode command-line tools:
 ```sh
 make install
 make install BINDIR=/your/bin
+```
+
+`BINDIR` defaults to `${XDG_BIN_HOME:-$HOME/.local/bin}`.
+
+To remove a manual installation:
+
+```sh
 make uninstall
 ```
 
-`BINDIR` defaults to `${XDG_BIN_HOME:-$HOME/.local/bin}`. Use the same override when uninstalling.
+Use the same `BINDIR` override as installation, for example `make uninstall BINDIR=/your/bin`. This removes only the local executable and requires neither a build nor sudo. When switching to Homebrew, remove the manual installation so it does not shadow Homebrew's executable.
+
+To remove a Homebrew installation:
+
+```sh
+brew uninstall bric3/tap/awaken
+```
+
+Remove the privileged worker and sudoers rule separately with `make uninstall-sudoers`.
 
 ## Privileges
 
@@ -91,8 +106,6 @@ Rerun setup after updating the executable to refresh the worker protocol. Stop a
 make install-sudoers      # Source-tree alternative
 make uninstall-sudoers   # Remove the rule and root worker
 ```
-
-`make uninstall` removes only the local executable.
 
 ## Safety
 
