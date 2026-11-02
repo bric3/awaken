@@ -146,9 +146,9 @@ final class CLIIntegrationTests: XCTestCase {
     waitForExit(process)
     let output = readTerminal(terminal)
     XCTAssertEqual(process.terminationStatus, 0)
-    XCTAssertTrue(output.contains("\rAwake: 00:00:02"), output)
-    XCTAssertTrue(output.contains("\rAwake: 00:00:01"), output)
-    XCTAssertTrue(output.contains("\rAwake: 00:00:00"), output)
+    XCTAssertTrue(output.contains("\r00:00:02"), output)
+    XCTAssertTrue(output.contains("\r00:00:01"), output)
+    XCTAssertTrue(output.contains("\r00:00:00"), output)
     XCTAssertTrue(output.hasSuffix("\r\n"), output)
     XCTAssertEqual(output.utf8.filter { $0 == 10 }.count, 1)
   }

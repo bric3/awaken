@@ -212,8 +212,8 @@ final class AwakenTests: XCTestCase {
     countdown.update(seconds: 99 * 3600)
     countdown.finish()
     XCTAssertEqual(output.count, 3)
-    XCTAssertEqual(output[0], "\rAwake: 100:00:00 remaining. Ctrl-C to stop.")
-    XCTAssertEqual(output[1], "\rAwake: 99:00:00 remaining. Ctrl-C to stop. ")
+    XCTAssertEqual(output[0], "\r100:00:00 remaining. Ctrl-C to stop.")
+    XCTAssertEqual(output[1], "\r99:00:00 remaining. Ctrl-C to stop. ")
     XCTAssertEqual(output[2], "\n")
   }
 
@@ -224,10 +224,10 @@ final class AwakenTests: XCTestCase {
     session.writeStatus = { output += $0 }
     session.report = { output += $0 + "\n" }
     try session.run(seconds: 2, ignoreLid: true, showCountdown: true)
-    XCTAssertTrue(output.hasPrefix("\rAwake: 00:00:02"))
-    XCTAssertTrue(output.contains("\rAwake: 00:00:01"))
+    XCTAssertTrue(output.hasPrefix("\r00:00:02"))
+    XCTAssertTrue(output.contains("\r00:00:01"))
     XCTAssertTrue(
-      output.hasSuffix("\rAwake: 00:00:00 remaining. Ctrl-C to stop.\nNormal sleep restored.\n"))
+      output.hasSuffix("\r00:00:00 remaining. Ctrl-C to stop.\nNormal sleep restored.\n"))
     XCTAssertEqual(fake.operations, ["acquire", "disable", "restore", "release"])
     XCTAssertEqual(fake.safetyChecks, 2)
   }

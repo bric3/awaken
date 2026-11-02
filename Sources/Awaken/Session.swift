@@ -95,7 +95,7 @@ struct Countdown {
     let minutes = String(format: "%02d", Int(seconds / 60 % 60))
     let remainder = String(format: "%02d", Int(seconds % 60))
     let line =
-      "Awake: \(hours.count < 2 ? "0" : "")\(hours):\(minutes):\(remainder) remaining. Ctrl-C to stop."
+      "\(hours.count < 2 ? "0" : "")\(hours):\(minutes):\(remainder) remaining. Ctrl-C to stop."
     write("\r" + line + String(repeating: " ", count: max(0, width - line.count)))
     width = line.count
     previousSeconds = seconds
