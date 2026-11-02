@@ -10,16 +10,17 @@ enum Awaken {
   static let help = """
     Awaken \(BuildVersion.current)
 
-    Usage: awaken [-l] [-q] [-s] [-t SECONDS]
+    Usage: awaken [-l] [-q] [-s] [-t DURATION]
            awaken sudoers
 
       -l, --ignore-lid           Prevent lid-close sleep; requires root or passwordless sudo.
-      -t, --timeout SECONDS      Session duration; default: 300 seconds.
+      -t, --timeout DURATION     Whole number with optional s, m, h or d; default: 300s.
       -q, --no-countdown         Disable countdown updates.
       -s, --prevent-screensaver  Prevent automatic screensaver and display sleep.
       -V, --version             Print the embedded build version.
       -h, --help                Print help.
 
+    Bare durations are seconds: 30m = 1800s, 2h = 7200s, 1d = 86400s.
     Ctrl-C ends the session. Countdown updates require a terminal.
     Lid sessions stop at <=10% battery or serious/critical thermal state.
 
@@ -119,7 +120,7 @@ enum Awaken {
         ? "--ignore-lid requires root or passwordless sudo; the privileged worker did not start."
         : "the privileged worker did not start; refresh an older installed worker."
       throw Failure(
-        "\(requirement)\n\(diagnostics)Run: sudo \"$(command -v awaken)\" --ignore-lid -t SECONDS\nOr set up the worker: eval \"$(awaken sudoers)\""
+        "\(requirement)\n\(diagnostics)Run: sudo \"$(command -v awaken)\" --ignore-lid -t DURATION\nOr set up the worker: eval \"$(awaken sudoers)\""
       )
     }
     let message = diagnostics.replacingCharacters(in: ready, with: "")

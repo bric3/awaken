@@ -19,13 +19,22 @@ struct Options: Equatable {
   var version = false
 
   static func duration(_ text: String) throws -> UInt64 {
-    guard !text.isEmpty, text.utf8.allSatisfy({ (48...57).contains($0) }),
-      let seconds = UInt64(text), seconds > 0,
-      seconds <= UInt64.max / 1_000_000_000
+    let (number, multiplier): (Substring, UInt64) =
+      switch text.last {
+      case "s": (text.dropLast(), 1)
+      case "m": (text.dropLast(), 60)
+      case "h": (text.dropLast(), 3_600)
+      case "d": (text.dropLast(), 86_400)
+      default: (text[...], 1)
+      }
+    guard !number.isEmpty, number.utf8.allSatisfy({ (48...57).contains($0) }),
+      let amount = UInt64(number), amount > 0,
+      amount <= UInt64.max / 1_000_000_000 / multiplier
     else {
-      throw Failure("timeout must be 1...18446744073 whole seconds")
+      throw Failure(
+        "timeout must be a positive whole number with optional s, m, h or d (maximum 18446744073s)")
     }
-    return seconds
+    return amount * multiplier
   }
 
   static func parse(_ arguments: [String]) throws -> Options {
@@ -40,7 +49,7 @@ struct Options: Equatable {
       case "-s", "--prevent-screensaver": options.preventScreensaver = true
       case "-t", "--timeout":
         index += 1
-        guard index < arguments.count else { throw Failure("missing timeout in seconds") }
+        guard index < arguments.count else { throw Failure("missing timeout duration") }
         options.seconds = try duration(arguments[index])
       default: throw Failure("unknown option: \(arguments[index]); see awaken --help")
       }

@@ -28,13 +28,30 @@ final class AwakenTests: XCTestCase {
     }
   }
 
+  func testDurationUnitsForShortAndLongOptions() throws {
+    for (text, expected): (String, UInt64) in [
+      ("15", 15), ("15s", 15), ("30m", 1_800), ("2h", 7_200), ("2d", 172_800), ("0001h", 3_600),
+    ] {
+      XCTAssertEqual(try Options.parse(["-t", text]).seconds, expected, text)
+      XCTAssertEqual(try Options.parse(["--timeout", text]).seconds, expected, text)
+    }
+  }
+
   func testInvalidDurationsAndOverflow() throws {
     for text in [
-      "", "0", "-1", "+1", "1.5", "1s", " 1", "1\n", "１", "18446744073709551615", "18446744074",
+      "", "0", "0s", "0m", "0h", "0d", "-1", "-1h", "+1", "1.5", "1.5h", "0.5s", "1000ms",
+      "1w", "1y", "1H", "s", "m", "h", "d", "1h30m", "1h 30m", "1 s", " 1", "1 ", "1\n", "1s\n",
+      "１", "18446744073709551615", "18446744073709551615d", "18446744074",
     ] {
       XCTAssertThrowsError(try Options.duration(text), text)
     }
-    XCTAssertEqual(try Options.duration("18446744073"), 18_446_744_073)
+    for (suffix, multiplier): (String, UInt64) in [
+      ("", 1), ("s", 1), ("m", 60), ("h", 3_600), ("d", 86_400),
+    ] {
+      let limit = 18_446_744_073 / multiplier
+      XCTAssertEqual(try Options.duration("\(limit)\(suffix)"), limit * multiplier)
+      XCTAssertThrowsError(try Options.duration("\(limit + 1)\(suffix)"))
+    }
   }
 
   func testDeadlineUsesOnlyElapsedContinuousTime() {
@@ -148,7 +165,10 @@ final class AwakenTests: XCTestCase {
   func testControlPipeRequestAndForegroundDeath() throws {
     let pipe = Pipe()
     let cancellation = Cancellation()
-    let request = WorkerRequest(seconds: 123, showCountdown: true, preventScreensaver: true)
+    let options = try Options.parse(["--timeout", "2h"])
+    let request = WorkerRequest(
+      seconds: options.seconds, showCountdown: true, preventScreensaver: true)
+    XCTAssertEqual(request.message, "AWAKEN/3 7200 1 1\n")
     try pipe.fileHandleForWriting.write(contentsOf: Data(request.message.utf8))
     XCTAssertEqual(
       try ControlPipe.request(

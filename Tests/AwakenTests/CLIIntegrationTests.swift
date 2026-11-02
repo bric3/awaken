@@ -69,7 +69,8 @@ final class CLIIntegrationTests: XCTestCase {
     return String(decoding: output, as: UTF8.self)
   }
 
-  private func waitForActivation(_ output: Pipe) throws {
+  @discardableResult
+  private func waitForActivation(_ output: Pipe) throws -> String {
     let deadline = Deadline(seconds: 5, now: continuousNanoseconds())
     var line = ""
     while !deadline.expired(at: continuousNanoseconds()) {
@@ -77,7 +78,7 @@ final class CLIIntegrationTests: XCTestCase {
       {
         if byte == 10 {
           XCTAssertTrue(line.hasPrefix("Awake for up to "), line)
-          return
+          return line
         }
         line.append(Character(UnicodeScalar(byte)))
       }
@@ -106,11 +107,23 @@ final class CLIIntegrationTests: XCTestCase {
   }
 
   func testOrdinarySessionExpires() throws {
-    let (process, output) = try launch(["--timeout", "1"])
+    let (process, output) = try launch(["--timeout", "1s"])
     defer { stopIfRunning(process) }
     try waitForActivation(output)
     waitForExit(process)
     XCTAssertEqual(process.terminationStatus, 0)
+  }
+
+  func testDurationUnitsAreConvertedToSecondsBeforeActivation() throws {
+    for (duration, seconds) in [("2m", 120), ("2h", 7_200), ("2d", 172_800)] {
+      let (process, output) = try launch(["-t", duration])
+      defer { stopIfRunning(process) }
+      XCTAssertEqual(
+        try waitForActivation(output), "Awake for up to \(seconds)s. Press Ctrl-C to stop.")
+      kill(process.processIdentifier, SIGTERM)
+      waitForExit(process)
+      XCTAssertEqual(process.terminationStatus, 128 + SIGTERM)
+    }
   }
 
   func testVersionOptionsPrintTheEmbeddedVersion() throws {
@@ -241,6 +254,7 @@ final class CLIIntegrationTests: XCTestCase {
     for arguments in [
       ["--privileged-worker", "extra"], ["-t", "0"], ["--lid"], ["sudoers", "extra"],
       ["--install-sudoers", "test_user"],
+      ["-t", "0h"], ["-t", "1.5h"], ["--timeout", "1000ms"], ["--timeout", "1w"],
     ] {
       let (process, _) = try launch(arguments)
       defer { stopIfRunning(process) }

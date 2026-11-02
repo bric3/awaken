@@ -6,7 +6,9 @@ Timed sleep prevention for macOS 13+. Supports lid-close sessions on battery and
 
 ```sh
 awaken                        # Prevent idle sleep for 300 seconds
-awaken -t 1800                # Run for 30 minutes
+awaken -t 30m                 # Run for 30 minutes
+awaken -t 2h                  # Run for two hours
+awaken -t 1d                  # Run for 24 hours
 awaken --ignore-lid           # Requires root or passwordless sudo
 awaken --prevent-screensaver  # Keep the display awake
 awaken --version             # Print the embedded build version
@@ -14,12 +16,14 @@ awaken --version             # Print the embedded build version
 
 | Short | Option                  | Behaviour                                      |
 | ----- | ----------------------- | ---------------------------------------------- |
-| `-t`  | `--timeout SECONDS`     | Positive whole seconds; default `300`.         |
+| `-t`  | `--timeout DURATION`    | Whole number; units `s`, `m`, `h`, `d`.        |
 | `-l`  | `--ignore-lid`          | Prevent lid-close sleep through a root worker. |
 | `-q`  | `--no-countdown`        | Disable live countdown updates.                |
 | `-s`  | `--prevent-screensaver` | Prevent automatic screensaver/display sleep.   |
 | `-V`  | `--version`             | Print `awaken <version>`.                      |
 | `-h`  | `--help`                | Print usage and setup commands.                |
+
+The duration is a positive whole number followed by an optional lowercase `s`, `m`, `h` or `d`. Bare numbers mean seconds. `1d` is 24 hours. The default is `300s`.
 
 Ctrl-C ends the session. The countdown updates one terminal line per second; redirected output uses ordinary status lines. Paused terminal output does not block expiry. The display can sleep unless `-s` is enabled; `-s` can wake an idle display and does not override an explicit lock.
 
