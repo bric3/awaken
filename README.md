@@ -32,7 +32,15 @@ Ctrl-C ends the session. The countdown updates one terminal line per second; red
 
 ## Install
 
-Download `awaken-macos-universal` and its `.sha256` file from the same GitHub release:
+Install from Homebrew:
+
+```sh
+brew install bric3/tap/awaken
+```
+
+Homebrew builds the tagged release locally with Swift 5.9+ from Xcode or its Command Line Tools. Git must have access to the source repository. Complete the [worker setup](#privileges) to enable `--ignore-lid`.
+
+Alternatively, download `awaken-macos-universal` and its `.sha256` file from the same GitHub release:
 
 ```sh
 shasum -a 256 -c awaken-macos-universal.sha256
