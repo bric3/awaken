@@ -37,10 +37,31 @@ final class ReleaseTests: XCTestCase {
     let body = try XCTUnwrap(github.patches[0]["body"] as? String)
     XCTAssertTrue(body.hasPrefix("User notes\n"))
     XCTAssertTrue(body.hasSuffix("\nMore notes"))
-    XCTAssertNil(github.patches[0]["tag_name"])
+    XCTAssertEqual(github.patches[0]["tag_name"] as? String, "v0.2.0-rc.1")
     XCTAssertNil(github.patches[0]["name"])
     XCTAssertEqual(github.uploads.last?.0, 1)
     XCTAssertEqual(github.releases[0]["tag_name"] as? String, "v0.2.0-rc.1")
+  }
+
+  func testUntaggedDraftSuggestsNextVersionWithoutRetargetingExistingTags() throws {
+    for existingTag in [false, true] {
+      let github = FakeGitHub()
+      github.existingTag = existingTag
+      github.releases = [
+        github.release(
+          tag: "untagged-placeholder",
+          body: try DraftNotes.update(nil, version: "0.1.0-SNAPSHOT", sha: "old"))
+      ]
+      try github.updateDraft()
+      if existingTag {
+        XCTAssertTrue(github.patches.isEmpty)
+        XCTAssertTrue(github.uploads.isEmpty)
+      } else {
+        XCTAssertEqual(github.patches[0]["tag_name"] as? String, "v0.1.0")
+        XCTAssertEqual(github.releases[0]["tag_name"] as? String, "v0.1.0")
+        XCTAssertEqual(github.uploads.map(\.0), [1, 1])
+      }
+    }
   }
 
   func testDraftUploadUsesReleaseIDAndReplacesOnlyItsSnapshotAssets() throws {
@@ -170,6 +191,7 @@ private final class FakeGitHub {
           result = release
         } else if method == "PATCH" {
           self.patches.append(fields!)
+          for (key, value) in fields! { self.releases[self.releases.count - 1][key] = value }
           result = self.releases.last!
         } else if method == "DELETE" {
           self.deleted.append(path)

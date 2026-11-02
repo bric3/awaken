@@ -111,9 +111,10 @@ struct ReleaseCoordinator {
     }
     // Existing tags cannot be retargeted by editing a draft's target_commitish.
     struct Ref: Decodable { let ref: String }
-    _ = try Version.tag(draft.tagName)
-    let refs = try get("git/matching-refs/tags/\(draft.tagName)", as: [Ref].self)
-    guard !refs.contains(where: { $0.ref == "refs/tags/\(draft.tagName)" }) else {
+    let selectedTag = draft.tagName.hasPrefix("untagged-") ? tag : draft.tagName
+    _ = try Version.tag(selectedTag)
+    let refs = try get("git/matching-refs/tags/\(selectedTag)", as: [Ref].self)
+    guard !refs.contains(where: { $0.ref == "refs/tags/\(selectedTag)" }) else {
       report("Draft uses an existing Git tag; skipped update to preserve its commit.")
       return
     }
@@ -125,6 +126,7 @@ struct ReleaseCoordinator {
     _ = try request(
       "PATCH", "repos/\(repository)/releases/\(draft.id)",
       [
+        "tag_name": selectedTag,
         "target_commitish": sha,
         "body": try DraftNotes.update(latest.body, version: version, sha: sha),
       ])
